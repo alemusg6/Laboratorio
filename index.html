@@ -1,212 +1,27 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Task Manager</title>
-<style>
-  /* ----- Reset y tipografía ----- */
-  * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
-  body { background: #f5f5f5; color: #333; }
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const morgan = require('morgan');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const db = require('./db');
+const path = require('path');  // 👈 AGREGAR
 
-  /* ----- Contenedor principal ----- */
-  .container { max-width: 500px; margin: 50px auto; padding: 20px; background: #fff; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+const app = express();
 
-  h2 { text-align: center; margin-bottom: 20px; color: #444; }
+// ----- Middleware -----
+app.use(cors());
+app.use(express.json());
+app.use(morgan('dev'));
 
-  /* ----- Formularios ----- */
-  form { display: flex; flex-direction: column; gap: 15px; }
-  input[type="text"], input[type="email"], input[type="password"] {
-    padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 16px;
-  }
-  button {
-    padding: 10px; background: #007BFF; color: #fff; border: none; border-radius: 5px;
-    cursor: pointer; font-size: 16px; transition: background 0.3s;
-  }
-  button:hover { background: #0056b3; }
+// 👇 AGREGAR ESTO (elige una opción):
 
-  /* ----- Mensajes ----- */
-  .message { text-align: center; margin-bottom: 10px; color: red; }
+// OPCIÓN A: Servir archivos estáticos desde la raíz
+app.use(express.static('.'));
 
-  /* ----- Lista de tareas ----- */
-  ul { list-style: none; }
-  li { padding: 10px; background: #f1f1f1; margin-bottom: 10px; border-radius: 5px;
-       display: flex; justify-content: space-between; align-items: center; }
-  .done { text-decoration: line-through; color: gray; }
-  .btn-status { padding: 5px 10px; font-size: 14px; border: none; border-radius: 5px; cursor: pointer; background: #28a745; color: #fff; transition: background 0.3s; }
-  .btn-status:hover { background: #1e7e34; }
-
-</style>
-</head>
-<body>
-
-<div class="container">
-  <h2>Task Manager</h2>
-
-  <!-- Mensaje de error o éxito -->
-  <div class="message" id="message"></div>
-
-  <!-- Registro -->
-  <form id="registerForm">
-    <input type="text" id="regName" placeholder="Nombre" required>
-    <input type="email" id="regEmail" placeholder="Email" required>
-    <input type="password" id="regPassword" placeholder="Contraseña" required>
-    <button type="submit">Registrar</button>
-  </form>
-
-  <hr>
-
-  <!-- Login -->
-  <form id="loginForm">
-    <input type="email" id="loginEmail" placeholder="Email" required>
-    <input type="password" id="loginPassword" placeholder="Contraseña" required>
-    <button type="submit">Login</button>
-  </form>
-
-  <hr>
-
-  <!-- Crear Tarea -->
-  <form id="taskForm" style="display:none;">
-    <input type="text" id="taskTitle" placeholder="Título de la tarea" required>
-    <input type="text" id="taskDesc" placeholder="Descripción (opcional)">
-    <button type="submit">Crear Tarea</button>
-  </form>
-
-  <!-- Lista de tareas -->
-  <ul id="taskList"></ul>
-</div>
-
-<script>
-const API_URL = "http://localhost:4000";
-let token = null;
-let userId = null;
-
-// Mostrar mensaje
-function showMessage(msg, color="red") {
-  const messageDiv = document.getElementById('message');
-  messageDiv.style.color = color;
-  messageDiv.textContent = msg;
-  setTimeout(() => messageDiv.textContent = '', 3000);
-}
-
-// ----- Registro -----
-document.getElementById('registerForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  const name = document.getElementById('regName').value;
-  const email = document.getElementById('regEmail').value;
-  const password = document.getElementById('regPassword').value;
-
-  try {
-    const res = await fetch(`${API_URL}/users/register`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({name,email,password})
-    });
-    const data = await res.json();
-    if(res.ok) {
-      showMessage('Usuario registrado!', 'green');
-    } else {
-      showMessage(data.error);
-    }
-  } catch(err) {
-    showMessage('Error en registro');
-  }
+// OPCIÓN B: Servir específicamente el index.html en la ruta raíz
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// ----- Login -----
-document.getElementById('loginForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  const email = document.getElementById('loginEmail').value;
-  const password = document.getElementById('loginPassword').value;
-
-  try {
-    const res = await fetch(`${API_URL}/users/login`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({email,password})
-    });
-    const data = await res.json();
-    if(res.ok) {
-      showMessage('Login exitoso!', 'green');
-      token = data.token;
-      userId = data.user.id;
-      document.getElementById('taskForm').style.display = 'block';
-      fetchTasks();
-    } else {
-      showMessage(data.error);
-    }
-  } catch(err) {
-    showMessage('Error en login');
-  }
-});
-
-// ----- Crear Tarea -----
-document.getElementById('taskForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  const title = document.getElementById('taskTitle').value;
-  const description = document.getElementById('taskDesc').value;
-
-  try {
-    const res = await fetch(`${API_URL}/tasks`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json", "Authorization": `Bearer ${token}`},
-      body: JSON.stringify({title,description})
-    });
-    const data = await res.json();
-    if(res.ok) {
-      showMessage('Tarea creada!', 'green');
-      document.getElementById('taskTitle').value = '';
-      document.getElementById('taskDesc').value = '';
-      fetchTasks();
-    } else {
-      showMessage(data.error);
-    }
-  } catch(err) {
-    showMessage('Error al crear tarea');
-  }
-});
-
-// ----- Listar Tareas -----
-async function fetchTasks() {
-  try {
-    const res = await fetch(`${API_URL}/tasks/${userId}`, {
-      headers: {"Authorization": `Bearer ${token}`}
-    });
-    const data = await res.json();
-    const taskList = document.getElementById('taskList');
-    taskList.innerHTML = '';
-    data.forEach(task => {
-      const li = document.createElement('li');
-      li.textContent = `${task.title} - ${task.status}`;
-      if(task.status === 'done') li.classList.add('done');
-
-      const btn = document.createElement('button');
-      btn.textContent = 'Avanzar';
-      btn.className = 'btn-status';
-      btn.onclick = () => advanceStatus(task.id);
-      li.appendChild(btn);
-
-      taskList.appendChild(li);
-    });
-  } catch(err) {
-    showMessage('Error al obtener tareas');
-  }
-}
-
-// ----- Avanzar estado -----
-async function advanceStatus(taskId) {
-  try {
-    const res = await fetch(`${API_URL}/tasks/${taskId}/status`, {
-      method: "PUT",
-      headers: {"Content-Type": "application/json","Authorization": `Bearer ${token}`}
-    });
-    const data = await res.json();
-    if(res.ok) fetchTasks();
-    else showMessage(data.error);
-  } catch(err) {
-    showMessage('Error al actualizar tarea');
-  }
-}
-</script>
-</body>
-</html>
+// ... el resto de tu código del server.js
